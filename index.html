@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>港科遊 新聞</title>
+<title>新聞本本</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0f1a24">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="港科遊">
+<meta name="apple-mobile-web-app-title" content="新聞本本">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon192.png">
+<link rel="icon" href="icon192.png">
 <style>
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#14202b; --mute:#5d6b78; --line:#d9e0e6;
-  --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --game:#7a4de0;
+  --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --evt:#0b7a75; --ent:#c2255c; --game:#7a4de0;
   --bar:#0f1a24; --bar-ink:#f2f5f8;
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#0b141c; --surface:#142230; --ink:#e8eef3; --mute:#92a1ae; --line:#233445;
-         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --game:#b79bff; }
+         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --evt:#4fd1c5; --ent:#ff8fb1; --game:#b79bff; }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -50,7 +50,8 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 .digest-title strong{font-size:18px;color:var(--ink)}
 .cat{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;
   border-left:4px solid var(--c);overflow:hidden}
-.cat[data-k="hk"]{--c:var(--hk)} .cat[data-k="tech"]{--c:var(--tech)} .cat[data-k="esports"]{--c:var(--esp)} .cat[data-k="game"]{--c:var(--game)}
+.cat[data-k="hk"]{--c:var(--hk)} .cat[data-k="tech"]{--c:var(--tech)} .cat[data-k="esports"]{--c:var(--esp)} .cat[data-k="game"]{--c:var(--game)} .cat[data-k="events"]{--c:var(--evt)} .cat[data-k="ent"]{--c:var(--ent)}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:4px;padding:0 5px;margin-right:6px;line-height:1.5}
 .cat h2{margin:0;padding:10px 14px 4px;font-size:14px;font-weight:700;color:var(--c)}
 .cat ul{list-style:none;margin:0;padding:0 14px 6px}
 .cat li{padding:9px 0;border-top:1px solid var(--line)}
@@ -73,6 +74,8 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
     <button type="button" data-f="tech" aria-pressed="false">科技</button>
     <button type="button" data-f="esports" aria-pressed="false">電競</button>
     <button type="button" data-f="game" aria-pressed="false">遊戲</button>
+    <button type="button" data-f="events" aria-pressed="false">活動</button>
+    <button type="button" data-f="ent" aria-pressed="false">影視娛樂</button>
   </nav>
 </header>
 <main>
@@ -84,7 +87,7 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 const SUPABASE_URL = 'https://wemwppzjiiiygxfwbxev.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlbXdwcHpqaWlpeWd4ZndieGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MjcwODYsImV4cCI6MjEwMjMwMzA4Nn0.SRO5VEvyFpR3Dv88Jjkj42Df8xLyy4Errqqi2gMOAAU';
 const VAPID_PUBLIC = 'BNtUxRU1oQ_pfnfos06sCxB-wXRAXzd0NuNIm26mv7NQWpAbE8KwBTsBmRQowb1lE-aPVUQ6GiYzVb_F__u30Do';
-const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲' };
+const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲', events: '活動', ent: '影視娛樂' };
 
 const $ = (s) => document.querySelector(s);
 const btn = $('#sub-btn'), notice = $('#notice'), list = $('#list');
@@ -113,7 +116,7 @@ function render() {
     const when = t.toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
     const cats = Object.keys(LABELS).filter((k) => (filter === 'all' || filter === k) && (d.items[k] || []).length)
       .map((k) => `<section class="cat" data-k="${k}"><h2>${LABELS[k]}</h2><ul>` +
-        d.items[k].map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a><small>${esc(i.source || '')} ${ago(i.ts)}</small></li>`).join('') +
+        d.items[k].map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a><small>${i.tag ? `<span class="tag">${esc(i.tag)}</span>` : ''}${esc(i.source || '')} ${ago(i.ts)}</small></li>`).join('') +
         '</ul></section>').join('');
     return cats ? `<article class="digest"><h3 class="digest-title"><strong>${esc(d.slot)}</strong>${when}</h3>${cats}</article>` : '';
   }).join('') || '<p class="empty">這個分類暫時沒有新聞。</p>';
@@ -154,20 +157,23 @@ function setBtn(on, label, disabled) {
   btn.dataset.on = on; btn.textContent = label; btn.disabled = !!disabled;
 }
 async function initPush() {
-  if (!('serviceWorker' in navigator)) { setBtn(false, '不支援', true); return; }
+  btn.disabled = false;                       // 先確保掣可以撳，問題會在畫面上說明
+  if (!('serviceWorker' in navigator)) { say('此瀏覽器不支援 Service Worker，無法使用推送。'); return; }
   const reg = await navigator.serviceWorker.register('sw.js');
   await navigator.serviceWorker.ready;
   if (isIOS && !standalone) {
     say('iPhone／iPad：請先按 Safari 的「分享」→「加入主畫面」，再由主畫面開啟此 App，才可開啟推送。');
-    setBtn(false, '開啟推送', true); return;
+    setBtn(false, '開啟推送', false); return;
   }
-  if (!('PushManager' in window)) { setBtn(false, '不支援推送', true); return; }
+  if (!('PushManager' in window)) { say('此環境不支援推送（iPhone 需 iOS 16.4 或以上，並由主畫面開啟）。'); setBtn(false, '開啟推送', false); return; }
   const sub = await reg.pushManager.getSubscription();
   if (sub && Notification.permission === 'granted') { saveSub(sub).catch(() => {}); setBtn(true, '推送已開啟', false); }
   else setBtn(false, '開啟推送', false);
-  if (Notification.permission === 'denied') { say('通知已被封鎖，請到瀏覽器／系統設定允許此網站的通知。'); }
+  if (Notification.permission === 'denied') { say('通知已被封鎖，請到系統「設定」→「通知」允許此 App。'); }
 }
 btn.addEventListener('click', async () => {
+  if (isIOS && !standalone) { say('請先「加入主畫面」，再由主畫面圖示開啟此 App，然後撳開啟推送。'); return; }
+  if (!('PushManager' in window)) { say('此環境不支援推送。'); return; }
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
   if (btn.dataset.on === 'true') {            // 關閉推送
@@ -185,7 +191,7 @@ btn.addEventListener('click', async () => {
 
 navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (e) => e.data.type === 'refresh' && load());
 document.addEventListener('visibilitychange', () => !document.hidden && load());
-load(); initPush();
+load(); initPush().catch((e) => say('初始化失敗：' + e.message));
 </script>
 </body>
 </html>
