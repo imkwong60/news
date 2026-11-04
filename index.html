@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>港科遊 新聞</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1a24">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="港科遊">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#14202b; --mute:#5d6b78; --line:#d9e0e6;
+  --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --game:#7a4de0;
+  --bar:#0f1a24; --bar-ink:#f2f5f8;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0b141c; --surface:#142230; --ink:#e8eef3; --mute:#92a1ae; --line:#233445;
+         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --game:#b79bff; }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 "PingFang HK","Noto Sans HK","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;
+  padding-bottom:env(safe-area-inset-bottom)}
+header{background:var(--bar);color:var(--bar-ink);
+  padding:calc(14px + env(safe-area-inset-top)) 18px 14px;position:sticky;top:0;z-index:5}
+.head-row{max-width:680px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{margin:0;font-size:20px;font-weight:800;letter-spacing:.04em}
+#sub-btn{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:999px;padding:8px 16px;
+  background:#f2f5f8;color:#0f1a24;cursor:pointer}
+#sub-btn[data-on="true"]{background:transparent;color:#9fe3b0;box-shadow:inset 0 0 0 1px #9fe3b066}
+#sub-btn:disabled{opacity:.5;cursor:default}
+nav{max-width:680px;margin:12px auto 0;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{font:inherit;font-size:14px;border:1px solid #ffffff33;background:transparent;color:var(--bar-ink);
+  border-radius:999px;padding:4px 14px;cursor:pointer;white-space:nowrap}
+nav button[aria-pressed="true"]{background:var(--bar-ink);color:var(--bar);border-color:var(--bar-ink)}
+button:focus-visible{outline:2px solid #6aa6ff;outline-offset:2px}
+main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
+#notice{display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;margin-bottom:16px;font-size:14px;color:var(--mute)}
+#notice.show{display:block}
+.digest{margin-bottom:28px}
+.digest-title{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;font-size:15px;color:var(--mute);font-weight:600}
+.digest-title strong{font-size:18px;color:var(--ink)}
+.cat{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;
+  border-left:4px solid var(--c);overflow:hidden}
+.cat[data-k="hk"]{--c:var(--hk)} .cat[data-k="tech"]{--c:var(--tech)} .cat[data-k="esports"]{--c:var(--esp)} .cat[data-k="game"]{--c:var(--game)}
+.cat h2{margin:0;padding:10px 14px 4px;font-size:14px;font-weight:700;color:var(--c)}
+.cat ul{list-style:none;margin:0;padding:0 14px 6px}
+.cat li{padding:9px 0;border-top:1px solid var(--line)}
+.cat li:first-child{border-top:0}
+.cat a{color:var(--ink);text-decoration:none;font-weight:600;line-height:1.45;display:block}
+.cat a:active,.cat a:hover{text-decoration:underline}
+.cat small{color:var(--mute);font-size:12.5px}
+.empty{text-align:center;color:var(--mute);padding:56px 12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-row">
+    <h1>港科遊 新聞</h1>
+    <button id="sub-btn" type="button" disabled>開啟推送</button>
+  </div>
+  <nav aria-label="分類">
+    <button type="button" data-f="all" aria-pressed="true">全部</button>
+    <button type="button" data-f="hk" aria-pressed="false">香港</button>
+    <button type="button" data-f="tech" aria-pressed="false">科技</button>
+    <button type="button" data-f="esports" aria-pressed="false">電競</button>
+    <button type="button" data-f="game" aria-pressed="false">遊戲</button>
+  </nav>
+</header>
+<main>
+  <div id="notice"></div>
+  <div id="list"><p class="empty">載入中…</p></div>
+</main>
+
+<script>
+const SUPABASE_URL = 'https://wemwppzjiiiygxfwbxev.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlbXdwcHpqaWlpeWd4ZndieGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MjcwODYsImV4cCI6MjEwMjMwMzA4Nn0.SRO5VEvyFpR3Dv88Jjkj42Df8xLyy4Errqqi2gMOAAU';
+const VAPID_PUBLIC = 'BNtUxRU1oQ_pfnfos06sCxB-wXRAXzd0NuNIm26mv7NQWpAbE8KwBTsBmRQowb1lE-aPVUQ6GiYzVb_F__u30Do';
+const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲' };
+
+const $ = (s) => document.querySelector(s);
+const btn = $('#sub-btn'), notice = $('#notice'), list = $('#list');
+let filter = 'all', digests = [];
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const b64ToU8 = (b) => {
+  const p = '='.repeat((4 - (b.length % 4)) % 4);
+  const r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...r].map((c) => c.charCodeAt(0)));
+};
+const say = (t) => { notice.textContent = t; notice.classList.toggle('show', !!t); };
+
+/* ---------- 新聞列表 ---------- */
+function ago(ts) {
+  if (!ts) return '';
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 60) return Math.max(m, 1) + ' 分鐘前';
+  if (m < 1440) return Math.round(m / 60) + ' 小時前';
+  return new Date(ts).toLocaleDateString('zh-HK');
+}
+function render() {
+  if (!digests.length) { list.innerHTML = '<p class="empty">暫時未有新聞摘要。<br>下一個推送時間：9:00、15:00、21:00。</p>'; return; }
+  list.innerHTML = digests.map((d) => {
+    const t = new Date(d.created_at);
+    const when = t.toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+    const cats = Object.keys(LABELS).filter((k) => (filter === 'all' || filter === k) && (d.items[k] || []).length)
+      .map((k) => `<section class="cat" data-k="${k}"><h2>${LABELS[k]}</h2><ul>` +
+        d.items[k].map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a><small>${esc(i.source || '')} ${ago(i.ts)}</small></li>`).join('') +
+        '</ul></section>').join('');
+    return cats ? `<article class="digest"><h3 class="digest-title"><strong>${esc(d.slot)}</strong>${when}</h3>${cats}</article>` : '';
+  }).join('') || '<p class="empty">這個分類暫時沒有新聞。</p>';
+}
+async function load() {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/digests?select=slot,items,created_at&order=created_at.desc&limit=9`,
+      { headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON } });
+    if (!r.ok) throw new Error(r.status);
+    digests = await r.json();
+    render();
+  } catch (e) {
+    list.innerHTML = '<p class="empty">載入失敗，請檢查網絡後重新整理。</p>';
+  }
+}
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('nav button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  render();
+}));
+
+/* ---------- 推送訂閱 ---------- */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+
+async function saveSub(sub) {
+  const j = sub.toJSON();
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+  });
+  if (r.status === 409) return;            // 已訂閱過，當作成功
+  if (!r.ok) throw new Error('儲存失敗 ' + r.status + ' ' + (await r.text()).slice(0, 200));
+}
+function setBtn(on, label, disabled) {
+  btn.dataset.on = on; btn.textContent = label; btn.disabled = !!disabled;
+}
+async function initPush() {
+  if (!('serviceWorker' in navigator)) { setBtn(false, '不支援', true); return; }
+  const reg = await navigator.serviceWorker.register('sw.js');
+  await navigator.serviceWorker.ready;
+  if (isIOS && !standalone) {
+    say('iPhone／iPad：請先按 Safari 的「分享」→「加入主畫面」，再由主畫面開啟此 App，才可開啟推送。');
+    setBtn(false, '開啟推送', true); return;
+  }
+  if (!('PushManager' in window)) { setBtn(false, '不支援推送', true); return; }
+  const sub = await reg.pushManager.getSubscription();
+  if (sub && Notification.permission === 'granted') { saveSub(sub).catch(() => {}); setBtn(true, '推送已開啟', false); }
+  else setBtn(false, '開啟推送', false);
+  if (Notification.permission === 'denied') { say('通知已被封鎖，請到瀏覽器／系統設定允許此網站的通知。'); }
+}
+btn.addEventListener('click', async () => {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (btn.dataset.on === 'true') {            // 關閉推送
+    if (sub) await sub.unsubscribe();
+    setBtn(false, '開啟推送', false); say('已關閉推送。'); return;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { say('未允許通知，無法開啟推送。'); return; }
+    const s = sub || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC) });
+    await saveSub(s);
+    setBtn(true, '推送已開啟', false); say('已開啟！每日 9:00、15:00、21:00 會收到新聞摘要。');
+  } catch (e) { say('開啟失敗：' + e.message); }
+});
+
+navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (e) => e.data.type === 'refresh' && load());
+document.addEventListener('visibilitychange', () => !document.hidden && load());
+load(); initPush();
+</script>
+</body>
+</html>
