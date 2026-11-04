@@ -1,6 +1,6 @@
 {
-  "name": "港科遊 新聞",
-  "short_name": "港科遊",
+  "name": "新聞本本",
+  "short_name": "新聞本本",
   "description": "每日 9:00、15:00、21:00 推送香港、科技、遊戲新聞",
   "start_url": "./",
   "scope": "./",
@@ -9,8 +9,8 @@
   "theme_color": "#0f1a24",
   "lang": "zh-HK",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
