@@ -17,10 +17,12 @@
   --bg:#eef1f4; --surface:#ffffff; --ink:#14202b; --mute:#5d6b78; --line:#d9e0e6;
   --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --evt:#0b7a75; --ent:#c2255c; --game:#7a4de0;
   --bar:#0f1a24; --bar-ink:#f2f5f8;
+  --wx:#1a6b8a;
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#0b141c; --surface:#142230; --ink:#e8eef3; --mute:#92a1ae; --line:#233445;
-         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --evt:#4fd1c5; --ent:#ff8fb1; --game:#b79bff; }
+         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --evt:#4fd1c5; --ent:#ff8fb1; --game:#b79bff;
+         --wx:#5eb8d8; }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -45,6 +47,27 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 #notice{display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;
   padding:12px 14px;margin-bottom:16px;font-size:14px;color:var(--mute)}
 #notice.show{display:block}
+
+/* 天氣卡 */
+.wx-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;
+  border-left:4px solid var(--wx);overflow:hidden}
+.wx-head{display:flex;align-items:center;gap:12px;padding:12px 14px 8px}
+.wx-icon{width:48px;height:48px;flex-shrink:0}
+.wx-main{flex:1;min-width:0}
+.wx-place{font-size:13px;color:var(--mute);font-weight:600}
+.wx-temp{font-size:28px;font-weight:800;line-height:1.1;letter-spacing:-.02em}
+.wx-desc{font-size:13px;color:var(--mute);margin-top:2px}
+.wx-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--line)}
+.wx-cell{padding:10px 6px;text-align:center;border-right:1px solid var(--line)}
+.wx-cell:last-child{border-right:0}
+.wx-cell .k{font-size:11px;color:var(--mute);font-weight:600}
+.wx-cell .v{font-size:15px;font-weight:700;margin-top:2px}
+.wx-warn{padding:8px 14px;background:color-mix(in srgb,var(--hk) 12%,transparent);
+  border-top:1px solid var(--line);font-size:13px;color:var(--hk);font-weight:600}
+.wx-forecast{padding:8px 14px 12px;font-size:13px;color:var(--mute);line-height:1.45;border-top:1px solid var(--line)}
+.wx-source{font-size:11px;color:var(--mute);padding:0 14px 10px;opacity:.75}
+.wx-loading{padding:20px;text-align:center;color:var(--mute);font-size:14px}
+
 .digest{margin-bottom:28px}
 .digest-title{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;font-size:15px;color:var(--mute);font-weight:600}
 .digest-title strong{font-size:18px;color:var(--ink)}
@@ -79,6 +102,7 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
   </nav>
 </header>
 <main>
+  <div id="wx" class="wx-card"><div class="wx-loading">天氣載入中…</div></div>
   <div id="notice"></div>
   <div id="list"><p class="empty">載入中…</p></div>
 </main>
@@ -90,7 +114,7 @@ const VAPID_PUBLIC = 'BNtUxRU1oQ_pfnfos06sCxB-wXRAXzd0NuNIm26mv7NQWpAbE8KwBTsBmR
 const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲', events: '活動', ent: '影視娛樂' };
 
 const $ = (s) => document.querySelector(s);
-const btn = $('#sub-btn'), notice = $('#notice'), list = $('#list');
+const btn = $('#sub-btn'), notice = $('#notice'), list = $('#list'), wxEl = $('#wx');
 let filter = 'all', digests = [];
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -100,6 +124,83 @@ const b64ToU8 = (b) => {
   return Uint8Array.from([...r].map((c) => c.charCodeAt(0)));
 };
 const say = (t) => { notice.textContent = t; notice.classList.toggle('show', !!t); };
+
+/* ---------- 天氣（沙田） ---------- */
+const ICON_DESC = {
+  50:'陽光充沛',51:'間有陽光',52:'短暫陽光',53:'間有陽光幾陣驟雨',54:'短暫陽光有驟雨',
+  60:'多雲',61:'密雲',62:'微雨',63:'雨',64:'大雨',65:'雷暴',
+  70:'天色良好',71:'天色良好',72:'天色良好',73:'天色良好',74:'天色良好',75:'天色良好',76:'大致多雲',77:'天色大致良好',
+  80:'大風',81:'乾燥',82:'潮濕',83:'霧',84:'薄霧',85:'煙霞',
+  90:'熱',91:'暖',92:'涼',93:'冷'
+};
+const AQHI_LABEL = { Low:'低', Moderate:'中等', High:'高', 'Very High':'甚高', Serious:'嚴重' };
+
+function pickPlace(arr, names) {
+  if (!arr) return null;
+  for (const n of names) {
+    const hit = arr.find((x) => x.place === n || x.place?.includes(n));
+    if (hit) return hit;
+  }
+  return arr[0] || null;
+}
+
+async function loadWeather() {
+  try {
+    const [rhr, flw, aqhi, warn] = await Promise.all([
+      fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc').then((r) => r.json()),
+      fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=flw&lang=tc').then((r) => r.json()),
+      fetch('https://dashboard.data.gov.hk/api/aqhi-individual?format=json').then((r) => r.json()).catch(() => []),
+      fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc').then((r) => r.json()).catch(() => ({})),
+    ]);
+
+    const temp = pickPlace(rhr.temperature?.data, ['沙田']);
+    const rain = pickPlace(rhr.rainfall?.data, ['沙田']);
+    const humid = rhr.humidity?.data?.[0];
+    const uv = rhr.uvindex?.data?.[0];
+    const iconCode = Array.isArray(rhr.icon) ? rhr.icon[0] : rhr.icon;
+    const iconUrl = iconCode ? `https://www.hko.gov.hk/images/HKOWxIconOutline/pic${iconCode}.png` : '';
+    const desc = ICON_DESC[iconCode] || '';
+
+    const aq = (Array.isArray(aqhi) ? aqhi : []).find((s) => s.station === 'Sha Tin' || s.station === '沙田');
+    const aqVal = aq?.aqhi ?? '—';
+    const aqRisk = AQHI_LABEL[aq?.health_risk] || aq?.health_risk || '';
+
+    // 警告摘要
+    const warnKeys = Object.keys(warn || {}).filter((k) => warn[k] && typeof warn[k] === 'object');
+    const warnText = warnKeys.length
+      ? warnKeys.map((k) => warn[k].name || warn[k].type || k).join('、')
+      : (rhr.warningMessage || '');
+
+    const forecast = flw.forecastDesc || '';
+    const outlook = flw.outlook || '';
+    const update = rhr.updateTime
+      ? new Date(rhr.updateTime).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', minute: '2-digit', hour12: false })
+      : '';
+
+    wxEl.innerHTML = `
+      <div class="wx-head">
+        ${iconUrl ? `<img class="wx-icon" src="${esc(iconUrl)}" alt="${esc(desc)}" width="48" height="48">` : ''}
+        <div class="wx-main">
+          <div class="wx-place">沙田 · 香港天文台</div>
+          <div class="wx-temp">${temp ? temp.value + '°C' : '—'}</div>
+          <div class="wx-desc">${esc(desc)}${update ? ' · 更新 ' + update : ''}</div>
+        </div>
+      </div>
+      <div class="wx-grid">
+        <div class="wx-cell"><div class="k">濕度</div><div class="v">${humid ? humid.value + '%' : '—'}</div></div>
+        <div class="wx-cell"><div class="k">紫外線</div><div class="v">${uv ? uv.value + (uv.desc ? ' ' + uv.desc : '') : '—'}</div></div>
+        <div class="wx-cell"><div class="k">降雨</div><div class="v">${rain && rain.max != null ? rain.max + ' mm' : '0 mm'}</div></div>
+        <div class="wx-cell"><div class="k">AQHI</div><div class="v">${aqVal}${aqRisk ? ' ' + aqRisk : ''}</div></div>
+      </div>
+      ${warnText ? `<div class="wx-warn">⚠️ ${esc(warnText)}</div>` : ''}
+      ${(forecast || outlook) ? `<div class="wx-forecast">${esc(forecast)}${outlook ? '<br>' + esc(outlook) : ''}</div>` : ''}
+      <div class="wx-source">資料來源：香港天文台 Open Data · 環保署 AQHI</div>
+    `;
+  } catch (e) {
+    wxEl.innerHTML = '<div class="wx-loading">天氣暫時未能載入</div>';
+    console.error('weather', e);
+  }
+}
 
 /* ---------- 新聞列表 ---------- */
 function ago(ts) {
@@ -190,8 +291,14 @@ btn.addEventListener('click', async () => {
 });
 
 navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (e) => e.data.type === 'refresh' && load());
-document.addEventListener('visibilitychange', () => !document.hidden && load());
-load(); initPush().catch((e) => say('初始化失敗：' + e.message));
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { load(); loadWeather(); }
+});
+load();
+loadWeather();
+initPush().catch((e) => say('初始化失敗：' + e.message));
+// 每 15 分鐘自動刷新天氣
+setInterval(loadWeather, 15 * 60 * 1000);
 </script>
 </body>
 </html>
