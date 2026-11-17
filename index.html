@@ -15,13 +15,13 @@
 <style>
 :root{
   --bg:#eef1f4; --surface:#ffffff; --ink:#14202b; --mute:#5d6b78; --line:#d9e0e6;
-  --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --evt:#0b7a75; --ent:#c2255c; --game:#7a4de0;
+  --hk:#c8312b; --tech:#1f6feb; --esp:#d9480f; --evt:#0b7a75; --ent:#c2255c; --game:#7a4de0; --prop:#8b5a2b;
   --bar:#0f1a24; --bar-ink:#f2f5f8;
   --wx:#1a6b8a;
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#0b141c; --surface:#142230; --ink:#e8eef3; --mute:#92a1ae; --line:#233445;
-         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --evt:#4fd1c5; --ent:#ff8fb1; --game:#b79bff;
+         --hk:#ff6b62; --tech:#6aa6ff; --esp:#ff9a57; --evt:#4fd1c5; --ent:#ff8fb1; --game:#b79bff; --prop:#d4a574;
          --wx:#5eb8d8; }
 }
 *{box-sizing:border-box}
@@ -73,7 +73,7 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 .digest-title strong{font-size:18px;color:var(--ink)}
 .cat{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;
   border-left:4px solid var(--c);overflow:hidden}
-.cat[data-k="hk"]{--c:var(--hk)} .cat[data-k="tech"]{--c:var(--tech)} .cat[data-k="esports"]{--c:var(--esp)} .cat[data-k="game"]{--c:var(--game)} .cat[data-k="events"]{--c:var(--evt)} .cat[data-k="ent"]{--c:var(--ent)}
+.cat[data-k="hk"]{--c:var(--hk)} .cat[data-k="tech"]{--c:var(--tech)} .cat[data-k="esports"]{--c:var(--esp)} .cat[data-k="game"]{--c:var(--game)} .cat[data-k="events"]{--c:var(--evt)} .cat[data-k="ent"]{--c:var(--ent)} .cat[data-k="prop"]{--c:var(--prop)}
 .tag{display:inline-block;font-size:11.5px;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:4px;padding:0 5px;margin-right:6px;line-height:1.5}
 .cat h2{margin:0;padding:10px 14px 4px;font-size:14px;font-weight:700;color:var(--c)}
 .cat ul{list-style:none;margin:0;padding:0 14px 6px}
@@ -82,6 +82,15 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 .cat a{color:var(--ink);text-decoration:none;font-weight:600;line-height:1.45;display:block}
 .cat a:active,.cat a:hover{text-decoration:underline}
 .cat small{color:var(--mute);font-size:12.5px}
+.cat li.expanded{background:color-mix(in srgb,var(--c) 6%,transparent)}
+.cat a.t{cursor:pointer;user-select:none}
+.cat a.t::after{content:' ▾';font-size:11px;opacity:.45;font-weight:400}
+.cat li.expanded a.t::after{content:' ▴'}
+.art-body{display:none;padding:8px 0 4px;font-size:14px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.cat li.expanded .art-body{display:block}
+.art-body.loading{color:var(--mute);font-style:italic}
+.art-body .err{color:var(--mute)}
+.art-body .orig{display:inline-block;margin-top:8px;font-size:12.5px;font-weight:600;color:var(--c)}
 .empty{text-align:center;color:var(--mute);padding:56px 12px}
 </style>
 </head>
@@ -99,6 +108,7 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
     <button type="button" data-f="game" aria-pressed="false">遊戲</button>
     <button type="button" data-f="events" aria-pressed="false">活動</button>
     <button type="button" data-f="ent" aria-pressed="false">影視娛樂</button>
+    <button type="button" data-f="prop" aria-pressed="false">樓市</button>
   </nav>
 </header>
 <main>
@@ -111,7 +121,7 @@ main{max-width:680px;margin:0 auto;padding:18px 16px 48px}
 const SUPABASE_URL = 'https://wemwppzjiiiygxfwbxev.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlbXdwcHpqaWlpeWd4ZndieGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MjcwODYsImV4cCI6MjEwMjMwMzA4Nn0.SRO5VEvyFpR3Dv88Jjkj42Df8xLyy4Errqqi2gMOAAU';
 const VAPID_PUBLIC = 'BNtUxRU1oQ_pfnfos06sCxB-wXRAXzd0NuNIm26mv7NQWpAbE8KwBTsBmRQowb1lE-aPVUQ6GiYzVb_F__u30Do';
-const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲', events: '活動', ent: '影視娛樂' };
+const LABELS = { hk: '香港', tech: '科技', esports: '電競', game: '遊戲', events: '活動', ent: '影視娛樂', prop: '樓市' };
 
 const $ = (s) => document.querySelector(s);
 const btn = $('#sub-btn'), notice = $('#notice'), list = $('#list'), wxEl = $('#wx');
@@ -210,6 +220,49 @@ function ago(ts) {
   if (m < 1440) return Math.round(m / 60) + ' 小時前';
   return new Date(ts).toLocaleDateString('zh-HK');
 }
+const articleCache = new Map(); // link -> text
+
+async function fetchArticleText(url) {
+  if (articleCache.has(url)) return articleCache.get(url);
+  // 1) Jina Reader（最穩）
+  try {
+    const r = await fetch('https://r.jina.ai/' + url, {
+      headers: { Accept: 'text/plain' },
+      signal: AbortSignal.timeout(18000),
+    });
+    if (r.ok) {
+      let t = await r.text();
+      // 去掉 Jina 前置 metadata
+      t = t.replace(/^Title:.*\n/m, '').replace(/^URL Source:.*\n/m, '')
+           .replace(/^Published Time:.*\n/m, '').replace(/^Markdown Content:\n?/m, '')
+           .replace(/^#{1,3} .+\n+/, '').trim();
+      if (t.length > 120) {
+        articleCache.set(url, t);
+        return t;
+      }
+    }
+  } catch (_) {}
+  // 2) allorigins + 簡易抽取
+  try {
+    const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const html = await r.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,style,nav,header,footer,aside,iframe,noscript').forEach((n) => n.remove());
+    const art = doc.querySelector('article') || doc.querySelector('[itemprop="articleBody"]') ||
+                doc.querySelector('.article-content,.article-body,.story-body,.post-content,#article-body') ||
+                doc.querySelector('main') || doc.body;
+    let t = (art?.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+    if (t.length > 200) {
+      articleCache.set(url, t);
+      return t;
+    }
+  } catch (_) {}
+  return null;
+}
+
 function render() {
   if (!digests.length) { list.innerHTML = '<p class="empty">暫時未有新聞摘要。<br>下一個推送時間：9:00、15:00、21:00。</p>'; return; }
   list.innerHTML = digests.map((d) => {
@@ -217,10 +270,53 @@ function render() {
     const when = t.toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
     const cats = Object.keys(LABELS).filter((k) => (filter === 'all' || filter === k) && (d.items[k] || []).length)
       .map((k) => `<section class="cat" data-k="${k}"><h2>${LABELS[k]}</h2><ul>` +
-        d.items[k].map((i) => `<li><a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.title)}</a><small>${i.tag ? `<span class="tag">${esc(i.tag)}</span>` : ''}${esc(i.source || '')} ${ago(i.ts)}</small></li>`).join('') +
+        d.items[k].map((i) =>
+          `<li data-link="${esc(i.link)}">` +
+          `<a class="t" href="javascript:void(0)" role="button">${esc(i.title)}</a>` +
+          `<small>${i.tag ? `<span class="tag">${esc(i.tag)}</span>` : ''}${esc(i.source || '')} ${ago(i.ts)}</small>` +
+          `<div class="art-body"></div>` +
+          `</li>`
+        ).join('') +
         '</ul></section>').join('');
     return cats ? `<article class="digest"><h3 class="digest-title"><strong>${esc(d.slot)}</strong>${when}</h3>${cats}</article>` : '';
   }).join('') || '<p class="empty">這個分類暫時沒有新聞。</p>';
+
+  list.querySelectorAll('li[data-link] > a.t').forEach((a) => {
+    a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const li = a.closest('li');
+      const link = li.dataset.link;
+      const body = li.querySelector('.art-body');
+      if (li.classList.contains('expanded')) {
+        li.classList.remove('expanded');
+        return;
+      }
+      // 收起其他
+      list.querySelectorAll('li.expanded').forEach((x) => x.classList.remove('expanded'));
+      li.classList.add('expanded');
+      if (body.dataset.loaded === '1') return;
+      body.className = 'art-body loading';
+      body.textContent = '正在擷取全文…';
+      const text = await fetchArticleText(link);
+      body.className = 'art-body';
+      if (text) {
+        body.textContent = text.length > 6000 ? text.slice(0, 6000) + '…' : text;
+        const oa = document.createElement('a');
+        oa.className = 'orig';
+        oa.href = link;
+        oa.target = '_blank';
+        oa.rel = 'noopener';
+        oa.textContent = '閱讀原文 ↗';
+        body.appendChild(document.createElement('br'));
+        body.appendChild(oa);
+        body.dataset.loaded = '1';
+      } else {
+        body.innerHTML = `<span class="err">暫時無法擷取全文（部分網站有保護）。</span><br>` +
+          `<a class="orig" href="${esc(link)}" target="_blank" rel="noopener">開啟原文 ↗</a>`;
+        body.dataset.loaded = '1';
+      }
+    });
+  });
 }
 async function load() {
   try {
