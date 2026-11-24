@@ -285,7 +285,7 @@ function fetchArticleText(rawUrl) {
   const p = (async () => {
     const url = unwrapGoogleNews(rawUrl);
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 20000);
+    const timer = setTimeout(() => ctl.abort(), 35000);
     let fallback = '';
     const accept = (t) => {
       t = (t || '').trim();
@@ -294,6 +294,18 @@ function fetchArticleText(rawUrl) {
       if (t.length >= 60 && t.length > fallback.length) fallback = t;
       throw new Error('short');
     };
+    // 0) 自家 Edge Function：由伺服器直接抓原文（最可靠）
+    try {
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/article?url=${encodeURIComponent(rawUrl)}`, {
+        headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON },
+        signal: ctl.signal,
+      });
+      if (r.ok) {
+        const j = await r.json();
+        const t = (j.text || '').trim();
+        if (t.length >= 120) { articleCache.set(rawUrl, t); return t; }
+      }
+    } catch (_) {}
     const jobs = [
       // Jina Reader
       async () => {
