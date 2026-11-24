@@ -1,4 +1,4 @@
-const CACHE = 'hknews-v1';
+const CACHE = 'hknews-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon192.png'];
 
 self.addEventListener('install', (e) => {
@@ -32,8 +32,8 @@ self.addEventListener('push', (e) => {
   e.waitUntil(
     self.registration.showNotification(d.title || '新聞摘要', {
       body: d.body || '',
-      icon: 'icon-192.png',
-      badge: 'icon-192.png',
+      icon: 'icon192.png',
+      badge: 'icon192.png',
       tag: d.tag || 'digest',
       renotify: true,
       data: { url: d.url || './' },
