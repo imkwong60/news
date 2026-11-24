@@ -221,46 +221,145 @@ function ago(ts) {
   return new Date(ts).toLocaleDateString('zh-HK');
 }
 const articleCache = new Map(); // link -> text
+const inflight = new Map();     // link -> Promise
 
-async function fetchArticleText(url) {
-  if (articleCache.has(url)) return articleCache.get(url);
-  // 1) Jina Reader（最穩）
+const BLOCK_RE = /(just a moment|enable javascript|access denied|attention required|captcha|verify you are (a )?human|請啟用\s*javascript|403 forbidden|target url returned error)/i;
+
+// Google News 舊式連結內含原文網址，可直接解出
+function unwrapGoogleNews(url) {
   try {
-    const r = await fetch('https://r.jina.ai/' + url, {
-      headers: { Accept: 'text/plain' },
-      signal: AbortSignal.timeout(18000),
-    });
-    if (r.ok) {
-      let t = await r.text();
-      // 去掉 Jina 前置 metadata
-      t = t.replace(/^Title:.*\n/m, '').replace(/^URL Source:.*\n/m, '')
-           .replace(/^Published Time:.*\n/m, '').replace(/^Markdown Content:\n?/m, '')
-           .replace(/^#{1,3} .+\n+/, '').trim();
-      if (t.length > 120) {
-        articleCache.set(url, t);
-        return t;
-      }
-    }
+    const u = new URL(url);
+    if (u.hostname !== 'news.google.com') return url;
+    const id = u.pathname.split('/').pop();
+    const bin = atob(id.replace(/-/g, '+').replace(/_/g, '/'));
+    const m = bin.match(/https?:\/\/[\x21-\x7e]+/);
+    if (m) return m[0];
   } catch (_) {}
-  // 2) allorigins + 簡易抽取
-  try {
-    const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), {
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!r.ok) throw new Error(String(r.status));
-    const html = await r.text();
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    doc.querySelectorAll('script,style,nav,header,footer,aside,iframe,noscript').forEach((n) => n.remove());
-    const art = doc.querySelector('article') || doc.querySelector('[itemprop="articleBody"]') ||
-                doc.querySelector('.article-content,.article-body,.story-body,.post-content,#article-body') ||
-                doc.querySelector('main') || doc.body;
-    let t = (art?.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
-    if (t.length > 200) {
-      articleCache.set(url, t);
-      return t;
+  return url;
+}
+
+function paras(el) {
+  const t = [...el.querySelectorAll('p,h2,h3')]
+    .map((p) => p.textContent.replace(/\s+/g, ' ').trim())
+    .filter((x) => x.length >= 20).join('\n\n');
+  if (t.length >= 200) return t;
+  return (el.textContent || '').replace(/[ \t\u00a0]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
+}
+
+function extractFromHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const meta = (n) => (doc.querySelector(`meta[property="${n}"],meta[name="${n}"]`)?.content || '').trim();
+  const desc = meta('og:description') || meta('description');
+  doc.querySelectorAll('script,style,nav,header,footer,aside,iframe,noscript,form,figure,[class*="related"],[class*="share"],[class*="comment"],[class*="advert"]').forEach((n) => n.remove());
+  const sels = ['article', '[itemprop="articleBody"]',
+    '.article-content,.article-body,.story-body,.post-content,.entry-content,#article-body,.content-article', 'main'];
+  let best = '';
+  for (const sel of sels) {
+    const el = doc.querySelector(sel);
+    if (!el) continue;
+    const t = paras(el);
+    if (t.length > best.length) best = t;
+    if (best.length > 400) break;
+  }
+  if (best.length < 200 && doc.body) best = paras(doc.body);
+  return best.length >= 200 ? best : (desc.length > best.length ? desc : best);
+}
+
+function cleanJina(t) {
+  return t.replace(/^Title:.*\n/m, '').replace(/^URL Source:.*\n/m, '')
+    .replace(/^Published Time:.*\n/m, '').replace(/^Markdown Content:\n?/m, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')            // 圖片
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')          // 連結只留文字
+    .replace(/^#{1,3} .+\n+/, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+const PROXIES = [
+  (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+];
+
+function fetchArticleText(rawUrl) {
+  if (articleCache.has(rawUrl)) return Promise.resolve(articleCache.get(rawUrl));
+  if (inflight.has(rawUrl)) return inflight.get(rawUrl);
+  const p = (async () => {
+    const url = unwrapGoogleNews(rawUrl);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    let fallback = '';
+    const accept = (t) => {
+      t = (t || '').trim();
+      if (BLOCK_RE.test(t.slice(0, 300))) throw new Error('blocked');
+      if (t.length >= 200) return t;
+      if (t.length >= 60 && t.length > fallback.length) fallback = t;
+      throw new Error('short');
+    };
+    const jobs = [
+      // Jina Reader
+      async () => {
+        const r = await fetch('https://r.jina.ai/' + url, { headers: { Accept: 'text/plain' }, signal: ctl.signal });
+        if (!r.ok) throw new Error(String(r.status));
+        return accept(cleanJina(await r.text()));
+      },
+      // 其他 CORS 代理 + 自行抽取（同時競速，取最快成功者）
+      ...PROXIES.map((px) => async () => {
+        const r = await fetch(px(url), { signal: ctl.signal });
+        if (!r.ok) throw new Error(String(r.status));
+        const html = await r.text();
+        if (!/<(html|body|p|article)[\s>]/i.test(html)) throw new Error('not html');
+        return accept(extractFromHtml(html));
+      }),
+    ];
+    try {
+      const text = await Promise.any(jobs.map((j) => j()));
+      articleCache.set(rawUrl, text);
+      return text;
+    } catch (_) {
+      return fallback || null;   // 全部失敗：最多回傳網頁摘要，不快取失敗結果
+    } finally {
+      clearTimeout(timer);
+      ctl.abort();               // 取消仍在進行的其餘請求
+      inflight.delete(rawUrl);
     }
-  } catch (_) {}
-  return null;
+  })();
+  inflight.set(rawUrl, p);
+  return p;
+}
+
+async function loadBody(li, force) {
+  const link = li.dataset.link;
+  const body = li.querySelector('.art-body');
+  if (body.dataset.loaded === '1' && !force) return;
+  body.className = 'art-body loading';
+  body.textContent = '正在擷取全文…（最多約 20 秒）';
+  const text = await fetchArticleText(link);
+  body.className = 'art-body';
+  body.textContent = '';
+  const orig = (label) => {
+    const oa = document.createElement('a');
+    oa.className = 'orig';
+    oa.href = link; oa.target = '_blank'; oa.rel = 'noopener';
+    oa.textContent = label;
+    return oa;
+  };
+  if (text) {
+    body.textContent = text.length > 6000 ? text.slice(0, 6000) + '…' : text;
+    body.appendChild(document.createElement('br'));
+    body.appendChild(orig('閱讀原文 ↗'));
+    body.dataset.loaded = '1';
+  } else {
+    const sp = document.createElement('span');
+    sp.className = 'err';
+    sp.textContent = '暫時無法擷取全文（網站可能有保護，或代理服務繁忙）。';
+    const rt = document.createElement('a');
+    rt.className = 'orig';
+    rt.href = 'javascript:void(0)';
+    rt.style.marginRight = '16px';
+    rt.textContent = '重試 ↻';
+    rt.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); loadBody(li, true); });
+    body.append(sp, document.createElement('br'), rt, orig('開啟原文 ↗'));
+    delete body.dataset.loaded;   // 失敗不標記為已載入，可再試
+  }
 }
 
 function render() {
@@ -282,39 +381,13 @@ function render() {
   }).join('') || '<p class="empty">這個分類暫時沒有新聞。</p>';
 
   list.querySelectorAll('li[data-link] > a.t').forEach((a) => {
-    a.addEventListener('click', async (e) => {
+    a.addEventListener('click', (e) => {
       e.preventDefault();
       const li = a.closest('li');
-      const link = li.dataset.link;
-      const body = li.querySelector('.art-body');
-      if (li.classList.contains('expanded')) {
-        li.classList.remove('expanded');
-        return;
-      }
-      // 收起其他
+      if (li.classList.contains('expanded')) { li.classList.remove('expanded'); return; }
       list.querySelectorAll('li.expanded').forEach((x) => x.classList.remove('expanded'));
       li.classList.add('expanded');
-      if (body.dataset.loaded === '1') return;
-      body.className = 'art-body loading';
-      body.textContent = '正在擷取全文…';
-      const text = await fetchArticleText(link);
-      body.className = 'art-body';
-      if (text) {
-        body.textContent = text.length > 6000 ? text.slice(0, 6000) + '…' : text;
-        const oa = document.createElement('a');
-        oa.className = 'orig';
-        oa.href = link;
-        oa.target = '_blank';
-        oa.rel = 'noopener';
-        oa.textContent = '閱讀原文 ↗';
-        body.appendChild(document.createElement('br'));
-        body.appendChild(oa);
-        body.dataset.loaded = '1';
-      } else {
-        body.innerHTML = `<span class="err">暫時無法擷取全文（部分網站有保護）。</span><br>` +
-          `<a class="orig" href="${esc(link)}" target="_blank" rel="noopener">開啟原文 ↗</a>`;
-        body.dataset.loaded = '1';
-      }
+      loadBody(li, false);
     });
   });
 }
